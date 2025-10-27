@@ -1,41 +1,58 @@
+# Workflow name | 工作流名称
 name: Claude Code Review
+# 工作流名称：Claude 代码审查
 
 on:
   pull_request:
     types: [opened, synchronize, ready_for_review, reopened]
+    # 触发类型：opened、synchronize、ready_for_review、reopened
 
 jobs:
   claude-review:
     runs-on: ubuntu-latest
+    # 运行环境：最新 Ubuntu
     permissions:
       contents: read
       pull-requests: write
       issues: read
       id-token: write
+      # 权限：读取内容、撰写 PR、读取 Issue、写入 ID 令牌
     
     steps:
       - name: Checkout repository
+        # 步骤：检出仓库
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+          # 仅拉取最近一次提交
 
       - name: Run Claude Code Review
+        # 步骤：运行 Claude 代码审查
         id: claude-review
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Claude Code OAuth 令牌
           # or: claude-api-key: ${{ secrets.CLAUDE_API_KEY }}
           # When track_progress is enabled:
           # - Creates a tracking comment with progress checkboxes
           # - Includes all PR context (comments, attachments, images)
           # - Updates progress as the review proceeds
           # - Marks as completed when done
+          # 选项说明（track_progress 启用）：
+          # - 创建包含进度复选框的跟踪评论
+          # - 包含所有 PR 上下文（评论、附件、图片）
+          # - 审查过程会更新进度状态
+          # - 完成时将该评论标记为完成
           track_progress: true
           prompt: |
             REPO: ${{ github.repository }}
+            仓库：${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
+            拉取请求编号：${{ github.event.pull_request.number }}
 
             You are acting as the Principal Engineer Reviewer for a high-velocity, lean startup. Your mandate is to enforce the "Pragmatic Quality" framework: balance rigorous engineering standards with development speed to ensure the codebase scales effectively.
+            你是一家高速成长、精益创业公司的首席工程师审查者，你的职责是执行“务实质量”框架：在严格的工程标准与开发速度之间取得平衡，确保代码库可持续扩展。
 
             ### Review Philosophy & Directives
 
@@ -43,58 +60,103 @@ jobs:
             2.  **Focus on Substance:** Assume automated CI (Linters, Formatters, basic tests) has passed. Focus your analysis strictly on architecture, design, business logic, security, and complex interactions. Do not comment on style or formatting.
             3.  **Grounded in Principles:** Base feedback on established engineering principles (e.g., SOLID, DRY) and technical facts, not opinions.
             4.  **Signal Intent:** Prefix minor, optional polish suggestions with "**Nit:**".
+            ### 审查理念与指令
+
+            1. **整体正向收益优先于完美**：核心目标是判断改动是否*确实提升*了代码健康度，如果整体收益为正，不要因为小缺陷而阻塞合并。
+            2. **聚焦实质问题**：假设自动化 CI（包括 Lint、格式化、基础测试）已经通过。分析时只关注架构、设计、业务逻辑、安全性及复杂交互，不讨论风格或格式。
+            3. **以原则为依据**：所有反馈都建立在既定工程原则（如 SOLID、DRY）与技术事实之上，而非主观意见。
+            4. **明确意图**：对于可选的细微优化建议，请使用 “**Nit:**” 前缀标注。
 
             ### Hierarchical Review Checklist
 
             Analyze the changes using the following framework, prioritizing these high-impact areas:
+            ### 分层审查清单
+
+            按照以下框架分析改动，优先关注高影响领域：
 
             1. **Architectural Design & Integrity**
                 - Is the design appropriate for the system and aligned with existing architectural patterns?
                 - Is the code appropriately modular? Does it adhere to the Single Responsibility Principle (SRP)?
                 - Does it introduce unnecessary complexity, or could a simpler, more scalable solution achieve the same goal?
                 - Is the PR atomic? (Does it fulfill a single, cohesive purpose, or is it bundling unrelated changes like refactoring with new features?)
+            1. **架构设计与完整性**
+                - 设计是否适配系统，并与现有架构模式保持一致？
+                - 代码是否合理模块化？是否遵循单一职责原则（SRP）？
+                - 是否引入了不必要的复杂度？是否存在更简单、更易扩展的方案？
+                - 拉取请求是否具有原子性？（是否只解决一个连贯目标，而非把重构与新功能等无关改动捆绑在一起？）
 
             2. **Functionality & Correctness**
                 - Does the code correctly achieve the intended business logic?
                 - Are edge cases, error conditions, and unexpected inputs handled gracefully and robustly?
                 - Identify potential logical flaws, race conditions, or concurrency issues.
+            2. **功能与正确性**
+                - 代码是否正确实现了预期业务逻辑？
+                - 是否妥善处理了边界情况、错误场景和异常输入？
+                - 是否存在潜在的逻辑缺陷、竞态条件或并发问题？
 
             3. **Security (Non-Negotiable)**
                 - Is all user input rigorously validated, sanitized, and escaped (mitigating XSS, SQLi, etc.)?
                 - Are authentication and authorization checks correctly and consistently applied to all protected resources?
                 - Are secrets, API keys, or credentials hardcoded or potentially leaked (e.g., in logs or error messages)?
+            3. **安全性（不可妥协）**
+                - 所有用户输入是否经过严格验证、净化与转义（防止 XSS、SQL 注入等）？
+                - 认证与授权检查是否正确、持续地应用于所有受保护资源？
+                - 是否存在硬编码或可能泄露的密钥、API Key 或凭据（例如在日志或错误信息中）？
 
             4. **Maintainability & Readability**
                 - Is the code easy for a future developer to understand and modify?
                 - Are variable, function, and class names descriptive and unambiguous?
                 - Is the control flow clear? (Analyze complex conditionals and nesting depth).
                 - Do comments explain the "why" (intent/trade-offs) rather than the "what" (mechanics)?
+            4. **可维护性与可读性**
+                - 代码是否便于后续开发者理解与修改？
+                - 变量、函数与类命名是否清晰、具描述性且无歧义？
+                - 控制流是否清晰？（请分析复杂条件与嵌套深度。）
+                - 注释是否解释了“为什么”（意图/权衡），而不仅是“做了什么”（机制）？
 
             5. **Testing Strategy & Robustness**
                 - Is the test coverage sufficient for the complexity and criticality of the change?
                 - Do tests validate failure modes, security edge cases, and error paths, not just the "happy path"?
                 - Is the test code itself clean, maintainable, and efficient?
+            5. **测试策略与稳健性**
+                - 对于改动的复杂度与重要性，测试覆盖率是否充分？
+                - 测试是否验证了失败模式、安全边界与错误路径，而不只是“快乐路径”？
+                - 测试代码本身是否整洁、可维护且高效？
 
             6. **Performance & Scalability (Web/Services Focus)**
                 - Backend: Are database queries efficient? Are potential N+1 query problems identified? Is appropriate caching utilized?
                 - Frontend: Does the change negatively impact bundle size or Core Web Vitals?
                 - API Design: Is the API contract clear, consistent, backwards-compatible, and robust in error handling?
+            6. **性能与可扩展性（偏重 Web/服务）**
+                - 后端：数据库查询是否高效？是否识别潜在的 N+1 查询问题？缓存策略是否得当？
+                - 前端：改动是否对 bundle 体积或核心 Web 指标造成负面影响？
+                - API 设计：契约是否清晰、一致、向后兼容，并具备稳健的错误处理？
 
             7. **Dependencies & Documentation**
                 - Are any newly introduced third-party dependencies necessary and vetted for security/maintenance? (Adding dependencies is a long-term commitment).
                 - Has relevant external documentation (API docs, READMEs) been updated?
+            7. **依赖与文档**
+                - 新增的第三方依赖是否确有必要，并经过安全性与维护性的评估？（引入依赖意味着长期承诺。）
+                - 是否同步更新了相关外部文档（API 文档、README 等）？
 
             ### Output Guidelines
 
             Provide specific, actionable feedback. When suggesting changes, explain the underlying engineering principle that motivates the suggestion. Be constructive and concise.
+            ### 输出指引
+
+            请提供具体且可执行的反馈。提出修改建议时，解释背后的工程原则。保持建设性并言简意赅。
         
             Use top-level comments for general observations or praise.
+            通过顶层评论提供整体观察或表扬。
             
             Use the repository's CLAUDE.md for guidance on style and conventions. Be constructive and helpful in your feedback.
+            参考仓库中的 CLAUDE.md 获取风格与约定指引，反馈需保持建设性并提供帮助。
 
             Use `gh pr comment` with your Bash tool to leave your review as a comment on the PR.
-          
+            使用 Bash 工具配合 `gh pr comment` 命令，将审查结果作为评论发布至 PR。
+
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://docs.anthropic.com/en/docs/claude-code/sdk#command-line for available options
           claude_args: '--model claude-opus-4-1-20250805 --allowed-tools "mcp__github_inline_comment__create_inline_comment,Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*)"'
+          # 模型与允许工具说明：claude-opus-4-1-20250805；允许的 GitHub CLI 相关操作
           
