@@ -163,3 +163,138 @@
 ---
 如需，我可以把以上模板直接写入你的斜杠命令与子代理配置，或为 GLM 版本生成对应的预设命令文件。
 
+---
+
+## 七、逐步执行清单（含指令）
+
+以下给出“完成一段功能后”从本地到提交 PR 的最小闭环命令。按你的技术栈选择对应块。
+
+### 0) 启动与连通性自检（终端）
+- Node.js（示例）
+```
+pnpm install   # 或 npm ci / yarn
+pnpm lint && pnpm test
+pnpm dev       # 启动本地服务（示例端口 3000）
+```
+- Python（示例）
+```
+python -m venv .venv && . .venv/bin/activate
+pip install -r requirements.txt
+pytest -q
+uvicorn app:app --reload --port 8000  # 示例
+```
+- 端口连通
+```
+curl -I http://127.0.0.1:3000   # 或你的端口
+```
+
+### 1) 设计审查（Claude Code 对话中执行）
+在 Claude Code 对话框输入（示例）：
+```
+/design-review
+请按以下 URL 列表逐个执行浏览器操作：
+- http://127.0.0.1:3000/
+- http://127.0.0.1:3000/feature-x
+
+严格按此顺序调用工具并提供证据：
+1) mcp__playwright__browser_install
+2) mcp__playwright__browser_navigate(url)
+3) mcp__playwright__browser_wait_for("domcontentloaded")
+   若是 SPA，再等待关键选择器（如 #root 或 [data-testid="app-ready"]）
+4) mcp__playwright__browser_take_screenshot(fullPage=true)
+5) mcp__playwright__browser_console_messages（仅保留 error/warn 摘要）
+6) mcp__playwright__browser_network_requests（主文档与关键资源的状态/时序摘要）
+7) mcp__playwright__browser_snapshot（截取关键 DOM 片段）
+
+输出采用：Summary / Findings（逐条绑定 evidence id）/ Evidence / Limitations 结构。
+禁止无证据推断 UI，页面不可达时说明原因与复现步骤。
+```
+
+如遇空白页：改用 http://127.0.0.1，确认服务已起，且在截图前使用 wait_for。
+
+### 2) 代码审查（Claude Code 对话中执行）
+```
+/review
+请自动收集以下上下文：
+- git status
+- git diff --name-only origin/HEAD...
+- git diff --merge-base origin/HEAD
+
+按“务实质量”框架输出：Summary / Critical / Improvements / Nits。
+建议具体可执行并给出工程原则依据。
+```
+
+（可选）手动提供差异文件：
+```
+git diff --merge-base origin/HEAD > diff.txt
+```
+
+### 3) 安全审查（Claude Code 对话中执行）
+```
+/security-review
+仅审查本次新增改动的安全影响，并以高置信度过滤（<0.8 不上报）。
+输出：按文件与行号列出漏洞，含 Severity / Description / Exploit Scenario / Recommendation / Confidence。
+```
+
+### 4) 修复与回归（终端）
+- 根据审查意见修复后，重复执行“0→1→2→3”。
+
+### 5) 提交 PR（终端）
+```
+git add -A && git commit -m "feat: 完成功能 X 与本地三合一审查"
+git push origin <your-branch>
+gh pr create -f   # 需要已登录 GitHub CLI
+```
+
+推送后，若已接入 GitHub Actions：
+- 代码审查：.github/workflows/claude-code-review*.yml
+- 安全审查：.github/workflows/security.yml
+会在 PR 下自动留下审查评论。
+
+### 6) GLM 替代 Claude（可选）
+若你使用 GLM 插件进行本地审查：
+- 对话命令仍可用 `/design-review` / `/review` / `/security-review`；
+- 将本仓库的提示词直接粘贴到 GLM 的命令配置里；
+- 凭据在插件内配置（与 GitHub Secrets 无关）。
+
+若需要 PR 自动化（GLM）：
+- 参考 `USAGE.zh-CN.md` 附录的 `glm-code-review` GitHub Actions 模板；
+- 设置 `GLM_API_KEY`（可选 `GLM_ENDPOINT`、`GLM_MODEL`），按你的服务端返回格式调整解析。
+
+---
+
+## 八、快捷命令配置（一次配置，长期复用）
+
+目的：避免每次输入很长的提示词。把“长提示”固化为 IDE 的斜杠命令，日常只输入短指令。
+
+### 1) 设计审查快捷命令 `/dr`
+- 在 IDE 的 Claude Code（或 GLM 插件）中新增命令，命名：`/dr`。
+- 将 `design-review/quick-slash-commands.md` 中“DR-QUICK”片段复制到命令内容。
+- 使用：
+```
+/dr http://127.0.0.1:3000/ http://127.0.0.1:3000/feature-x
+```
+- 行为：
+  - 自动执行 install → navigate → wait_for → screenshot → console/network/snapshot；
+  - 要求所有发现绑定证据；
+  - 支持多 URL 顺序审查。
+
+### 2) 代码审查快捷命令 `/cr`
+- 新增命令：`/cr`，内容复制 `code-review/quick-slash-commands.md` 中“CR-QUICK”。
+- 使用：
+```
+/cr
+```
+- 行为：
+  - 自动拉取 git 上下文（status / diff / log），
+  - 按“务实质量”输出 Summary / Critical / Improvements / Nits。
+
+### 3) 安全审查快捷命令 `/sr`
+- 新增命令：`/sr`，内容复制 `security-review/quick-slash-commands.md` 中“SR-QUICK”。
+- 使用：
+```
+/sr
+```
+- 行为：仅上报高置信度、具备清晰攻击路径的新增问题，按 Markdown 模板输出。
+
+提示：快捷命令与长提示词等价；配置一次后，后续只输入 `/dr ...`、`/cr`、`/sr` 即可触发完整流程。
